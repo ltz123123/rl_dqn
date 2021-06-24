@@ -206,5 +206,5 @@ def show_result():
 
 
 if __name__ == "__main__":
-    # ddqn()
+    ddqn()
     show_result()
