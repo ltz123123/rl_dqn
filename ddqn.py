@@ -9,7 +9,6 @@ import tensorflow as tf
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.optimizers import Adam
-import tensorflow.keras.backend as kb
 import matplotlib.pyplot as plt
 
 
@@ -40,14 +39,15 @@ class ReplayMemory:
         self.size = min(self.size + 1, self.max_size)
 
     def get_sample(self, mini_batch_size):
-        indexes = np.random.choice(self.size, mini_batch_size, replace=False)
-        return {
-            "current_states": self.current_state_memory[indexes],
-            "future_states": self.future_state_memory[indexes],
-            "rewards": self.reward_memory[indexes],
-            "actions": self.action_memory[indexes],
-            "dones": self.done_memory[indexes]
-        }
+        idx = np.random.choice(self.size, mini_batch_size, replace=False)
+
+        return (
+            self.current_state_memory[idx],
+            self.future_state_memory[idx],
+            self.reward_memory[idx],
+            self.action_memory[idx],
+            self.done_memory[idx]
+        )
 
     def __len__(self):
         return self.size
@@ -62,20 +62,20 @@ class Agent:
         self.update_every = 4
 
         self.mini_batch_size = 64
-        self.max_memory_len = 10000
+        self.max_memory_len = 50000
         self.memory = ReplayMemory(self.max_memory_len, env_space)
 
         self.epsilon = 1
         self.epsilon_decay_rate = 0.995
-        self.epsilon_min = 0.01
+        self.epsilon_min = 0.05
 
         self.lr = 0.0005
         self.discount_rate = 0.995
         self.tau = 0.001
 
         self.model_train = self.build_model()
-        self.model_predict = self.build_model()
-        self.model_predict.set_weights(
+        self.model_target = self.build_model()
+        self.model_target.set_weights(
             self.model_train.get_weights()
         )
 
@@ -91,9 +91,6 @@ class Agent:
             loss="mse"
         )
         return model
-
-    def update_model_weights(self):
-        self.model_predict.set_weights(self.model_train.get_weights())
 
     def decay_epsilon(self):
         self.epsilon = max(
@@ -118,19 +115,19 @@ class Agent:
                 self.train()
 
     def train(self):
-        sample = self.memory.get_sample(self.mini_batch_size)
+        current_states, future_states, rewards, actions, dones = self.memory.get_sample(self.mini_batch_size)
 
-        current_qs = self.model_train.predict_on_batch(sample["current_states"]).numpy()
-        future_qs = self.model_predict.predict_on_batch(sample["future_states"]).numpy()
-        new_qs = sample["rewards"] + self.discount_rate * np.amax(future_qs, axis=1) * (1 - sample["dones"])
-        current_qs[np.arange(self.mini_batch_size), sample["actions"]] = new_qs
+        current_qs = self.model_train.predict_on_batch(current_states).numpy()
+        future_qs = self.model_target.predict_on_batch(future_states).numpy()
+        a = np.argmax(self.model_train.predict_on_batch(future_states).numpy(), axis=1)
+        max_future_qs = future_qs[np.arange(self.mini_batch_size), a]
 
-        self.model_train.fit(
-            sample["current_states"],
+        new_qs = rewards + self.discount_rate * max_future_qs * (1 - dones)
+        current_qs[np.arange(self.mini_batch_size), actions] = new_qs
+
+        self.model_train.train_on_batch(
+            current_states,
             current_qs,
-            batch_size=self.mini_batch_size,
-            verbose=0,
-            shuffle=True
         )
 
         self.soft_update_model_weights()
@@ -138,10 +135,10 @@ class Agent:
     def soft_update_model_weights(self):
         new_weights = [
             self.tau * train_para + (1.0 - self.tau) * predict_para
-            for train_para, predict_para in zip(self.model_train.get_weights(), self.model_predict.get_weights())
+            for train_para, predict_para in zip(self.model_train.get_weights(), self.model_target.get_weights())
         ]
 
-        self.model_predict.set_weights(new_weights)
+        self.model_target.set_weights(new_weights)
 
 
 def ddqn():
@@ -207,4 +204,4 @@ def show_result():
 
 if __name__ == "__main__":
     ddqn()
-    show_result()
+    # show_result()
