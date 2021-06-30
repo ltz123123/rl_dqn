@@ -161,7 +161,6 @@ def ddqn():
             current_state = future_state
 
         agent.decay_epsilon()
-        agent.soft_update_model_weights()
 
         episode_reward = round(episode_reward, 4)
         history.append(episode_reward)
