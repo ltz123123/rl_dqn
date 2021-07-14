@@ -7,7 +7,6 @@ from tensorflow.keras import backend as kb
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 kb.clear_session()
-plt.ion()
 
 
 def plot(scores, ma, losses):
@@ -22,14 +21,12 @@ def plot(scores, ma, losses):
     axs[1].set_ylabel("Loss")
     axs[1].set_xlabel("Frame")
     axs[1].grid(1)
-    # plt.show()
-    fig.canvas.draw()
-    fig.canvas.flush_events()
+    plt.show()
 
 
 env = gym.make("LunarLander-v2")
 
-n_frame = 10_000
+n_frame = 100_000
 agent = Agent(len(env.observation_space.high), env.action_space.n, batch_size=64, v_max=300.0,
               v_min=-400.0)
 history = list()
