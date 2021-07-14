@@ -65,6 +65,7 @@ class Agent:
         return np.argmax(q)
 
     def step(self, current, rwd, future, done, act):
+        loss = np.nan
         self.n_step_buffer.append([current, act, rwd, future, done])
         if len(self.n_step_buffer) == self.n_step:
             rwd, future_state, done = self.get_n_step_info()
@@ -72,13 +73,15 @@ class Agent:
             self.memory.add_memory(current, rwd, future, done, act)
 
         if len(self.memory) >= self.batch_size:
-            self.train_model()
+            loss = self.train_model()
             self.model.reset_noise()
             self.model_target.reset_noise()
 
         self.t_step = (self.t_step + 1) % self.update_every
         if self.t_step == 0:
             self.update_target_model()
+
+        return loss
 
     def get_n_step_info(self):
         reward, next_state, done = self.n_step_buffer[-1][-3:]
@@ -144,6 +147,8 @@ class Agent:
         clipped_abs_error = np.power(clipped_abs_error, self.memory.alpha)
         for i in range(self.batch_size):
             self.memory.update_priority(tree_idx[i], clipped_abs_error[i])
+
+        return loss
 
     def update_target_model(self):
         self.model_target.set_weights(self.model.get_weights())

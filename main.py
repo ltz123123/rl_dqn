@@ -21,14 +21,14 @@ def plot(scores, ma, losses):
     axs[1].set_ylabel("Loss")
     axs[1].set_xlabel("Frame")
     axs[1].grid(1)
-    plt.show()
+    fig.savefig("fig.jpg")
 
 
-env = gym.make("LunarLander-v2")
+env = gym.make("CartPole-v1")
 
 n_frame = 100_000
-agent = Agent(len(env.observation_space.high), env.action_space.n, batch_size=64, v_max=300.0,
-              v_min=-400.0)
+agent = Agent(len(env.observation_space.high), env.action_space.n, batch_size=64, v_max=500.0,
+              v_min=0.0)
 history = list()
 ma = list()
 losses = list()
@@ -62,6 +62,9 @@ for frame in range(n_frame):
             if ma[-1] >= 200:
                 break
 
+    if frame % 500 == 0:
+        plot(history, ma, losses)
+
 env.close()
 
-plot(history, ma, losses)
+
