@@ -1,16 +1,26 @@
+# Ref:
+# https://github.com/Kaixhin/Rainbow/blob/master/main.py
+# https://github.com/Curt-Park/rainbow-is-all-you-need
+# https://github.com/Huixxi/TensorFlow2.0-for-Deep-Reinforcement-Learning
+
 from utils.Agent import Agent
 import gym
 import matplotlib.pyplot as plt
 import numpy as np
-import os
 from tensorflow.keras import backend as kb
+import tensorflow as tf
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
+gpus = tf.config.experimental.list_physical_devices('GPU')
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
 kb.clear_session()
 
 
+fig, axs = plt.subplots(1, 2, figsize=(20, 7))
+
+
 def plot(scores, ma, losses):
-    fig, axs = plt.subplots(1, 2, figsize=(10, 7))
     axs[0].plot(np.arange(len(scores)), scores, linewidth=0.5)
     axs[0].plot(np.arange(len(ma)) + 99, ma)
     axs[0].set_ylabel("Episode reward")
@@ -24,22 +34,24 @@ def plot(scores, ma, losses):
     fig.savefig("fig.jpg")
 
 
-env = gym.make("CartPole-v1")
+env = gym.make("LunarLander-v2")
 
 n_frame = 100_000
-agent = Agent(len(env.observation_space.high), env.action_space.n, batch_size=64, v_max=500.0,
-              v_min=0.0)
+agent = Agent([56, 56, 3], env.action_space.n, batch_size=64, v_max=300.0,
+              v_min=-400.0)
 history = list()
 ma = list()
 losses = list()
 
-current_state = env.reset()
+env.reset()
+current_state = tf.image.resize(env.render(mode="rgb_array"), (56, 56)) / 255.0
 done = False
 episode_reward = 0
 
 for frame in range(n_frame):
     action = agent.get_action(current_state)
-    future_state, reward, done, _ = env.step(action)
+    _, reward, done, _ = env.step(action)
+    future_state = tf.image.resize(env.render(mode="rgb_array"), (56, 56)) / 255.0
     loss = agent.step(current_state, reward, future_state, done, action)
 
     current_state = future_state
@@ -49,7 +61,8 @@ for frame in range(n_frame):
 
     if done:
         agent.decay_epsilon()
-        current_state = env.reset()
+        env.reset()
+        current_state = tf.image.resize(env.render(mode="rgb_array"), (56, 56)) / 255.0
 
         episode_reward = round(episode_reward, 4)
         history.append(episode_reward)
@@ -64,6 +77,21 @@ for frame in range(n_frame):
 
     if frame % 500 == 0:
         plot(history, ma, losses)
+
+
+plt.show()
+
+for _ in range(10):
+    done = False
+    env.reset()
+    state = tf.image.resize(env.render(mode="rgb_array"), (56, 56)) / 255.0
+    rwd = 0
+    while not done:
+        action = agent.get_action(current_state, testing=True)
+        _, reward, done, _ = env.step(action)
+        state = tf.image.resize(env.render(mode="rgb_array"), (56, 56)) / 255.0
+        rwd += reward
+    print(rwd)
 
 env.close()
 

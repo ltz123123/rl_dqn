@@ -12,7 +12,7 @@ class Agent:
             env_space,
             action_space,
             batch_size=64,
-            max_memory_len=10000,
+            max_memory_len=2 ** 14,
             alpha=0.6,
             beta=0.4,
             n_step=3,
@@ -59,13 +59,14 @@ class Agent:
 
     def get_action(self, state, testing=False):
         if not testing:
-            if np.random.rand() < 0:
+            if np.random.rand() < self.epsilon:
                 return np.random.randint(self.action_space)
-        q = np.sum(self.model(np.array([state]), training=False) * self.support_z, axis=-1)
+        q = np.sum(self.model(tf.expand_dims(state, 0), training=False) * self.support_z, axis=-1)
         return np.argmax(q)
 
     def step(self, current, rwd, future, done, act):
         loss = np.nan
+
         self.n_step_buffer.append([current, act, rwd, future, done])
         if len(self.n_step_buffer) == self.n_step:
             rwd, future_state, done = self.get_n_step_info()
@@ -74,8 +75,8 @@ class Agent:
 
         if len(self.memory) >= self.batch_size:
             loss = self.train_model()
-            self.model.reset_noise()
-            self.model_target.reset_noise()
+            # self.model.reset_noise()
+            # self.model_target.reset_noise()
 
         self.t_step = (self.t_step + 1) % self.update_every
         if self.t_step == 0:
@@ -95,7 +96,7 @@ class Agent:
         return reward, next_state, done
 
     def train_model(self):
-        # samping
+        # sampling
         (
             tree_idx, is_weights, current_states, future_states, rewards, actions, dones
         ) = self.memory.get_sample(self.batch_size)
@@ -104,7 +105,7 @@ class Agent:
 
         # loss calculation, model fitting
         next_action = np.argmax(
-            np.sum(self.model(np.array([current_states]), training=False) * self.support_z, axis=-1), axis=-1
+            np.sum(self.model(current_states, training=False) * self.support_z, axis=2), axis=-1
         )
         next_dist = self.model_target(future_states, training=False).numpy()  # [batch_size, n_action, n_atom]
         next_dist = next_dist[np.arange(self.batch_size), next_action]  # [batch_size, n_atom]
@@ -115,6 +116,8 @@ class Agent:
 
         l = np.floor(b)
         u = np.ceil(b)
+        l[(u > 0) * (l == u)] -= 1
+        u[(l < (self.n_atom - 1) * (l == u))] += 1
 
         offset = np.expand_dims(np.linspace(0, (self.batch_size - 1) * self.n_atom, self.batch_size), 1)
         offset = np.broadcast_to(offset, (self.batch_size, self.n_atom))
@@ -128,8 +131,8 @@ class Agent:
         loss_idx = tf.stop_gradient(loss_idx)
         is_weights = tf.stop_gradient(is_weights)
         with tf.GradientTape() as tape:
-            dist = self.model.predict_on_batch(current_states)
-            log_p = tf.math.log(tf.gather_nd(dist, loss_idx))
+            log_p = self.model(current_states, log=True)
+            log_p = tf.gather_nd(log_p, loss_idx)
             elementwise_loss = -tf.reduce_sum(proj_dist * log_p, axis=1)
             loss = tf.reduce_mean(elementwise_loss * is_weights)
             loss = tf.clip_by_norm(loss, 10.0)

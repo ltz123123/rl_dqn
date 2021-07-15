@@ -1,14 +1,8 @@
-# ref
-# https://github.com/jcborges/dqn-per/blob/master/Memory.py
-#    ref of ref
-#    https://github.com/rlcode/per/blob/master/SumTree.py
-#    https://github.com/rlcode/per/blob/master/prioritized_memory.py
-# https://github.com/Huixxi/TensorFlow2.0-for-Deep-Reinforcement-Learning/blob/d1c191e7bfbb44357a4066ced3b96fa8c847875a/07_noisynet.py#L205
 import numpy as np
 
 
 class PER:
-    def __init__(self, n_leaf_node, obs_dim, alpha=0.6, beta=0.4):
+    def __init__(self, n_leaf_node, obs_shape, alpha=0.6, beta=0.4):
         self.current_size = 0
         self.pointer = 0
 
@@ -17,13 +11,13 @@ class PER:
         self.tree = np.zeros(self.n_total_node, dtype=np.float32)
         self.tree[(self.n_leaf_node - 1) + self.pointer] = 1.0
 
-        self.memory_current_state = np.zeros([n_leaf_node, obs_dim], dtype=np.float32)
-        self.memory_future_state = np.zeros([n_leaf_node, obs_dim], dtype=np.float32)
+        self.memory_current_state = np.zeros([n_leaf_node] + obs_shape, dtype=np.float32)
+        self.memory_future_state = np.zeros([n_leaf_node] + obs_shape, dtype=np.float32)
         self.memory_reward = np.zeros([n_leaf_node], dtype=np.float32)
         self.memory_done = np.zeros([n_leaf_node], dtype=np.int32)
         self.memory_action = np.zeros([n_leaf_node], dtype=np.int32)
 
-        self.e = 1e-6
+        self.e = 1e-3
         self.alpha = alpha
         self.beta = beta
         self.b_increment_per_sampling = 0.001
@@ -39,6 +33,7 @@ class PER:
         self.update_priority(
             (self.n_leaf_node - 1) + self.pointer,
             self.max_priority ** self.alpha
+            # self.abs_error_upper_bound ** self.alpha
         )
 
         self.pointer = (self.pointer + 1) % self.n_leaf_node
