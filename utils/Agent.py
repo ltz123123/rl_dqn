@@ -16,29 +16,33 @@ class Agent:
             alpha=0.6,
             beta=0.4,
             n_step=3,
-            update_every=200,
+            update_target_model_every=200,
+            replay_frequency=1,
             n_atom=51,
             v_max=300.0,
-            v_min=-400.0
+            v_min=-400.0,
+            lr=1e-5,
+            is_img_input=True,
+            is_noisy=True
     ):
         self.env_space = env_space
         self.action_space = action_space
 
         self.batch_size = batch_size
         self.max_memory_len = max_memory_len
-        self.memory = PER(self.max_memory_len, env_space, alpha, beta)
+        self.memory = PER(self.max_memory_len, env_space, alpha, beta)  #
 
         self.n_step = n_step
         self.n_step_buffer = deque(maxlen=n_step)
 
-        self.epsilon = 1
+        self.epsilon = 1 if not is_noisy else 0
         self.epsilon_decay_rate = 0.995
-        self.epsilon_min = 0.05
+        self.epsilon_min = 0.05 if not is_noisy else 0
 
-        self.lr = 0.001
+        self.lr = lr
         self.gamma = 0.99
-        self.t_step = 0
-        self.update_every = update_every
+        self.update_target_model_every = update_target_model_every
+        self.replay_frequency = replay_frequency
 
         self.n_atom = n_atom
         self.v_max = v_max
@@ -46,9 +50,10 @@ class Agent:
         self.support_z = np.linspace(v_min, v_max, n_atom)
         self.delta_z = (v_max - v_min) / (n_atom - 1)
 
-        self.model = Network(env_space, action_space, n_atom)
+        self.is_noisy = is_noisy
+        self.model = Network(env_space, action_space, n_atom, is_noisy, is_img_input)
         self.optimizer = Adam(learning_rate=self.lr)
-        self.model_target = Network(env_space, action_space, n_atom)
+        self.model_target = Network(env_space, action_space, n_atom, is_noisy, is_img_input)
         self.update_target_model()
 
     def decay_epsilon(self):
@@ -57,14 +62,14 @@ class Agent:
             self.epsilon_min
         )
 
-    def get_action(self, state, testing=False):
-        if not testing:
+    def get_action(self, state, training=True):
+        if training:
             if np.random.rand() < self.epsilon:
                 return np.random.randint(self.action_space)
-        q = np.sum(self.model(tf.expand_dims(state, 0), training=False) * self.support_z, axis=-1)
+        q = np.sum(self.model(tf.expand_dims(state, 0), training=True) * self.support_z, axis=-1)
         return np.argmax(q)
 
-    def step(self, current, rwd, future, done, act):
+    def step(self, current, rwd, future, done, act, current_frame):
         loss = np.nan
 
         self.n_step_buffer.append([current, act, rwd, future, done])
@@ -73,13 +78,14 @@ class Agent:
             current, action = self.n_step_buffer[0][:2]
             self.memory.add_memory(current, rwd, future, done, act)
 
-        if len(self.memory) >= self.batch_size:
-            loss = self.train_model()
-            # self.model.reset_noise()
-            # self.model_target.reset_noise()
+        if self.memory.current_size >= self.batch_size:
+            if current_frame % self.replay_frequency == 0:
+                if self.is_noisy:
+                    self.model.reset_noise()
+                    # self.model_target.reset_noise()
+                loss = self.train_model()
 
-        self.t_step = (self.t_step + 1) % self.update_every
-        if self.t_step == 0:
+        if current_frame % self.update_target_model_every == 0 and current_frame > 0:
             self.update_target_model()
 
         return loss
@@ -155,3 +161,11 @@ class Agent:
 
     def update_target_model(self):
         self.model_target.set_weights(self.model.get_weights())
+
+    def soft_update_target_model(self, tau=0.001):
+        new_weights = [
+            tau * weights + (1.0 - tau) * target_weights
+            for weights, target_weights in zip(self.model.get_weights(), self.model_target.get_weights())
+        ]
+
+        self.model_target.set_weights(new_weights)

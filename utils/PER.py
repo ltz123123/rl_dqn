@@ -7,9 +7,8 @@ class PER:
         self.pointer = 0
 
         self.n_leaf_node = n_leaf_node
-        self.n_total_node = 2 * n_leaf_node - 1
-        self.tree = np.zeros(self.n_total_node, dtype=np.float32)
-        self.tree[(self.n_leaf_node - 1) + self.pointer] = 1.0
+        self.tree = np.zeros(n_leaf_node * 2 - 1)
+        self.update_priority(n_leaf_node - 1, 1)  # initiate with value 1 for the first transition
 
         self.memory_current_state = np.zeros([n_leaf_node] + obs_shape, dtype=np.float32)
         self.memory_future_state = np.zeros([n_leaf_node] + obs_shape, dtype=np.float32)
@@ -32,8 +31,7 @@ class PER:
 
         self.update_priority(
             (self.n_leaf_node - 1) + self.pointer,
-            self.max_priority ** self.alpha
-            # self.abs_error_upper_bound ** self.alpha
+            self.max_priority
         )
 
         self.pointer = (self.pointer + 1) % self.n_leaf_node
@@ -57,7 +55,7 @@ class PER:
             left_node_idx = 2 * tree_idx + 1
             right_node_idx = left_node_idx + 1
 
-            if left_node_idx >= self.n_total_node:
+            if left_node_idx >= len(self.tree):
                 break
             else:
                 if v <= self.tree[left_node_idx]:
@@ -75,23 +73,20 @@ class PER:
         priority_segment = self.tree[0] / mini_batch_size
         for i in range(mini_batch_size):
             value = np.random.uniform(priority_segment * i, priority_segment * (i + 1))
+            assert value <= self.tree[0]
             tree_idx_list[i] = self.get_leaf(value)
 
         memory_idx_list = tree_idx_list - (self.n_leaf_node - 1)
 
-        # weight
-        p_min = self.min_priority / self.tree[0]
-        max_weight = (p_min * self.current_size) ** -self.beta
-
         p_sampling = self.tree[tree_idx_list] / self.tree[0]
         is_weights = np.power(p_sampling * self.current_size, -self.beta)
-        is_weights /= max_weight
+        is_weights /= np.max(is_weights)
 
         self.beta = min(1.0, self.beta + self.b_increment_per_sampling)
 
         return (
             memory_idx_list + (self.n_leaf_node - 1),
-            is_weights,
+            is_weights.astype(np.float32),
             self.memory_current_state[memory_idx_list],
             self.memory_future_state[memory_idx_list],
             self.memory_reward[memory_idx_list],
@@ -109,6 +104,3 @@ class PER:
     @property
     def max_priority(self):
         return np.max(self.tree[-self.n_leaf_node:])
-
-    def __len__(self):
-        return self.current_size
